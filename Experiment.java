@@ -193,10 +193,6 @@ public class Experiment{
             iterate(this.pattern[i % this.pattern.length]);
 
             agent.invoke();
-
-            if(agent.getAvgProb() >= probStop){
-                return agent.getAvgTimeInterval();
-            }
             
         }
 
@@ -263,7 +259,7 @@ public class Experiment{
         float defaultTime = exp.performExperimentDefault(10 * 1000);
         System.out.println("Default time: " + defaultTime);
 
-        for(int h = 60; h <= 80; h += 10){
+        for(int h = 128; h <= 256; h += 10){
 
             float agentTime = exp.performExperimentAgent(1000 * 1000 * 30, 0.98f, h, defaultTime);
 

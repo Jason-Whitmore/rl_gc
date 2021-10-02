@@ -50,5 +50,9 @@ public class MovingAverage{
         return this.sum / this.currentSize;
     }
 
+    public float getNumSamples(){
+        return this.currentSize;
+    }
+
 
 }

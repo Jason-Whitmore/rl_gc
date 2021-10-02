@@ -12,6 +12,13 @@ public class GCAgent{
 
     private float updateLR;
 
+    private float updateDelta;
+
+    private int minUpdateInterval;
+
+    private float confidenceStopThreshold;
+
+
     private float discountFactor;
 
 
@@ -30,8 +37,6 @@ public class GCAgent{
 
     private ArrayList<Layer> valueNetwork;
 
-    private Layer stateOutputLayer;
-
     private float[] obs;
 
     private float probAction;
@@ -43,6 +48,9 @@ public class GCAgent{
     private float[] updateInputVector;
 
     private int valueFunctionInputSize;
+
+    private float bestMeanReward;
+    private ArrayList<float[][]> bestUpdateParams;
 
     
     //Debug fields
@@ -64,6 +72,9 @@ public class GCAgent{
     private MovingAverage timeIntervalAverage;
     private MovingAverage tdAverage;
 
+    private MovingAverage meanConfidence;
+    private MovingAverage meanReward;
+
     private int movingAverageNumSamples;
 
 
@@ -76,6 +87,9 @@ public class GCAgent{
         this.discountFactor = discountFactor;
 
         this.stateSize = 100;
+        this.minUpdateInterval = 10000;
+
+        this.updateDelta = 0.0001f;
 
         observationSize = 12;
         prevObsTime = System.currentTimeMillis();
@@ -83,7 +97,6 @@ public class GCAgent{
         //Create the models
         this.createPolicyNetwork(hiddenLayerSizePolicy);
         this.valueFunctionInputSize = this.getTotalEntryCount(this.getLSTMCurrentStates(this.policyNetwork)) + this.observationSize;
-
 
         this.createValueNetwork(hiddenLayerSizeValue);
         this.createUpdateNetwork(128);
@@ -94,6 +107,8 @@ public class GCAgent{
 
         this.timestep = 0;
         this.numDebugs = 0;
+
+        this.bestMeanReward = Float.NEGATIVE_INFINITY;
 
 
         this.debugInterval = debugInterval;
@@ -107,6 +122,8 @@ public class GCAgent{
         this.probAverage = new MovingAverage(this.movingAverageNumSamples);
         this.timeIntervalAverage = new MovingAverage(this.movingAverageNumSamples);
         this.tdAverage = new MovingAverage(this.movingAverageNumSamples);
+        this.meanReward = new MovingAverage(this.minUpdateInterval);
+        this.meanConfidence = new MovingAverage(this.minUpdateInterval);
     }
 
     public void setBaseline(float baseline){
@@ -149,8 +166,6 @@ public class GCAgent{
             this.firstTimestep = false;
         } else {
 
-            //long startTime = System.currentTimeMillis();
-
             //Get the next observation
             float[] nextObs = this.getObservation();
 
@@ -162,6 +177,7 @@ public class GCAgent{
 
             float reward = -(float)deltaSeconds;
             this.timeIntervalAverage.addSample(-reward);
+            this.meanReward.addSample(reward);
 
             //Get next state
             //System.out.println(Arrays.toString(this.state));
@@ -184,7 +200,7 @@ public class GCAgent{
                 float meanTimeInterval = this.timeIntervalAverage.getMean();
                 float meanAbsTdError = Math.abs(this.tdAverage.getMean());
 
-                System.out.println("Average prob: " + meanProb);
+                System.out.println("Average confidence: " + this.meanConfidence.getMean());
                 System.out.println("Average time interval: " + meanTimeInterval);
                 System.out.println("Average abs td error: " + meanAbsTdError);
                 System.out.println("Average performance ratio: " + meanTimeInterval / this.baseline + "\n");
@@ -207,9 +223,9 @@ public class GCAgent{
 
             //Adjust update function
             //Run old update input vector to populate backprop data
-            this.neuralNetworkPredict(this.updateNetwork, this.updateInputVector);
-            this.neuralNetworkGradient(this.updateNetwork, this.valueNetwork.get(0).dObjectivedX);
-            this.applyGradients(this.updateNetwork, tdError * this.updateLR);
+            //this.neuralNetworkPredict(this.updateNetwork, this.updateInputVector);
+            //this.neuralNetworkGradient(this.updateNetwork, this.valueNetwork.get(0).dObjectivedX);
+            //this.applyGradients(this.updateNetwork, tdError * this.updateLR);
 
             //Adjust the policy function
             //Run the predict function to populate the backprop data in the function object
@@ -222,22 +238,33 @@ public class GCAgent{
 
             float[] probVector = this.softmax(this.neuralNetworkPredict(this.policyNetwork, nextState));
             this.action = this.selectAction(probVector);
-            //GCAgent.printArray(probVector);
             this.obs = nextObs;
             this.probAction = probVector[this.action];
             this.state = nextState;
             this.updateInputVector = nextUpdateInput;
 
-            this.probAverage.addSample(Math.max(this.probAction, 1 - this.probAction));
+
+            this.meanConfidence.addSample(Math.max(this.probAction, 1 - this.probAction));
 
             if(this.action == 1){
                 System.gc();
             }
 
-            long endTime = System.currentTimeMillis();
-
-            //System.out.println("Invoke took: " + (endTime - startTime) / 1000f + " seconds");
-            //System.exit(1);
+            //Determine if update function should be adjusted
+            if(this.meanReward.getNumSamples() > this.minUpdateInterval && this.meanConfidence.getMean() > this.confidenceStopThreshold){
+                if(this.meanReward.getMean() > this.bestMeanReward){
+                    //Current update params are better than previous, set variables
+                    this.bestMeanReward = this.meanReward.getMean();
+                    this.bestUpdateParams = GCAgent.copyParams(this.updateNetwork);
+                }
+                
+                
+                //Create new update function
+                this.meanReward.reset();
+                this.setParameters(this.updateNetwork, this.bestUpdateParams);
+                this.randomOffsetParams(this.updateNetwork, this.updateDelta);
+                this.firstTimestep = true;
+            }
 
         }
 
@@ -327,22 +354,6 @@ public class GCAgent{
         }
 
         return inputVector;
-    }
-
-
-    private void setLSTMCurrentStates(ArrayList<Layer> neuralNetwork, ArrayList<float[]> newStates){
-        int index = 0;
-
-        for(int i = 0; i < neuralNetwork.size(); i++){
-            if(neuralNetwork.get(i) instanceof LSTM){
-                LSTM l = (LSTM)neuralNetwork.get(i);
-
-                l.currentHState = newStates.get(index);
-                index++;
-                l.currentCState = newStates.get(index);
-                index++;
-            }
-        }
     }
 
 
@@ -541,6 +552,59 @@ public class GCAgent{
 
     public float getAvgTimeInterval(){
         return this.timeIntervalAverage.getMean();
+    }
+
+
+    private static ArrayList<float[][]> copyParams(ArrayList<Layer> network){
+        ArrayList<float[][]> params = new ArrayList<float[][]>();
+
+        for(int i = 0; i < network.size(); i++){
+            for(int j = 0; j < network.get(i).parameters.size(); j++){
+                params.add(GCAgent.copy(network.get(i).parameters.get(j)));
+            }
+        }
+
+        return params;
+    }
+
+    private static float[][] copy(float[][] matrix){
+        float[][] result = new float[matrix.length][matrix[0].length];
+
+        for(int r = 0; r < result.length; r++){
+            for(int c = 0; c < result[0].length; c++){
+                result[r][c] = matrix[r][c];
+            }
+        }
+
+        return result;
+    }
+
+    private void setParameters(ArrayList<Layer> network, ArrayList<float[][]> parameters){
+        int k = 0;
+        for(int i = 0; i < network.size(); i++){
+            Layer l = network.get(i);
+
+            for(int j = 0; j < l.parameters.size(); i++){
+                l.parameters.set(j, GCAgent.copy(parameters.get(k)));
+                k++;
+            }
+        }
+    }
+
+    private void randomOffsetParams(ArrayList<Layer> network, float maxOffset){
+        for(int i = 0; i < network.size(); i++){
+            Layer l = network.get(i);
+
+            for(int j = 0; j < l.parameters.size(); j++){
+                float[][] matrix = l.parameters.get(j);
+
+                for(int r = 0; r < matrix.length; r++){
+                    for(int c = 0; c < matrix[0].length; c++){
+                        matrix[r][c] += ((float)Math.random() * (2 * maxOffset)) - maxOffset;
+                    }
+                }
+            }
+        }
     }
 
 }
