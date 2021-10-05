@@ -10,9 +10,8 @@ public class GCAgent{
 
     private float valueLR;
 
-    private float updateLR;
 
-    private float updateDelta;
+    private float updateStepSize;
 
     private int minUpdateInterval;
 
@@ -41,63 +40,36 @@ public class GCAgent{
 
     private float probAction;
 
-    private int action;
+    private int prev_action;
 
     private float[] state;
 
-    private float[] updateInputVector;
-
-    private int valueFunctionInputSize;
-
     private float bestMeanReward;
     private ArrayList<float[][]> bestUpdateParams;
-
-    
-    //Debug fields
-
-    private int debugInterval;
-
-
-    private int timestep;
-
-
 
     //Stopping conditions/debug statistics
     private MovingAverage meanConfidence;
     private MovingAverage meanReward;
 
 
-    public GCAgent(int hiddenLayerSizePolicy, int hiddenLayerSizeValue, float policyLR, float valueLR, float updateLR, float discountFactor, int debugInterval){
-
-        this.policyLR = policyLR;
-        this.valueLR = valueLR;
-        this.updateLR = updateLR;
-
-        this.discountFactor = discountFactor;
-
+    public GCAgent(){
         this.stateSize = 200;
+
+        this.valueLR = 0.001f;
+        this.policyLR = 0.0001f;
+        this.updateStepSize = 0.001f;
+        this.confidenceStopThreshold = 0.98f;
+        this.discountFactor = 0.9999f;
         this.minUpdateInterval = 10000;
 
-        this.updateDelta = 0.00001f;
+        //Create the functions
+        this.createPolicyNetwork(64);
+        this.createValueNetwork(64);
+        this.createUpdateNetwork(64);
 
-        this.observationSize = this.getObservation().length;
-        prevObsTime = System.currentTimeMillis();
-
-        //Create the models
-        this.createPolicyNetwork(hiddenLayerSizePolicy);
-
-        this.createValueNetwork(hiddenLayerSizeValue);
-        this.createUpdateNetwork(128);
-
-        this.obs = this.getObservation();
-
+        //Other fields
         this.firstTimestep = true;
-
         this.bestMeanReward = Float.NEGATIVE_INFINITY;
-
-
-        this.debugInterval = debugInterval;
-
         this.meanReward = new MovingAverage(this.minUpdateInterval);
         this.meanConfidence = new MovingAverage(this.minUpdateInterval);
     }
@@ -108,7 +80,7 @@ public class GCAgent{
 
         this.valueLR = valueLearningRate;
         this.policyLR = policyLearningRate;
-        this.updateDelta = updateStepSize;
+        this.updateStepSize = updateStepSize;
         this.confidenceStopThreshold = confidenceStopThreshold;
         this.discountFactor = discountFactor;
         this.minUpdateInterval = minUpdateInterval;
@@ -117,6 +89,12 @@ public class GCAgent{
         this.createPolicyNetwork(hiddenLayerSizePolicy);
         this.createValueNetwork(hiddenLayerSizeValue);
         this.createUpdateNetwork(hiddenLayerSizeUpdate);
+
+        //Other fields
+        this.firstTimestep = true;
+        this.bestMeanReward = Float.NEGATIVE_INFINITY;
+        this.meanReward = new MovingAverage(this.minUpdateInterval);
+        this.meanConfidence = new MovingAverage(this.minUpdateInterval);
     }
 
     /**
@@ -128,28 +106,24 @@ public class GCAgent{
         if(this.firstTimestep){
 
             //Get the current observation
-            float[] nextObs = this.getObservation();
-
-            float[] updateInputVector = this.getStartingUpdateInputVector(nextObs);
+            this.obs = this.getObservation();
 
             //Run input update input vector through network to get the state
-            this.state = this.neuralNetworkPredict(this.updateNetwork, updateInputVector);
+            this.state = this.updateFunctionPredictFirstTimestep(obs);
 
-            float[] probVector = this.softmax(this.neuralNetworkPredict(this.policyNetwork, this.state));
+            //Select action from policy
+            float[] probVector = this.policyFunctionPredict(state);
+            this.prev_action = this.selectAction(probVector);
 
-            int action = this.selectAction(probVector);
-
-            if(action == 1){
+            if(prev_action == 1){
                 System.gc();
             }
 
-            //update agent fields
-            this.action = action;
-            this.obs = nextObs;
-            this.probAction = probVector[this.action];
+            //Record the probability of the action being selected at the current state
+            this.probAction = probVector[this.prev_action];
 
-            this.updateInputVector = updateInputVector;
-
+            //Record the "confidence" level (maximum probability out of policy distribution)
+            this.meanConfidence.addSample(Math.max(this.probAction, 1 - this.probAction));
 
             this.firstTimestep = false;
         } else {
@@ -167,12 +141,11 @@ public class GCAgent{
             this.meanReward.addSample(reward);
 
             //Get next state
-            float[] nextUpdateInput = this.getUpdateInputVector(this.state, this.action, nextObs);
-            float[] nextState = this.neuralNetworkPredict(this.updateNetwork, nextUpdateInput);
+            float[] nextState = this.updateFunctionPredict(this.state, this.prev_action, nextObs);
 
             //Get values
-            float nextValue = this.neuralNetworkPredict(this.valueNetwork, nextState)[0];
-            float value = this.neuralNetworkPredict(this.valueNetwork, this.state)[0];
+            float nextValue = this.valueFunctionPredict(nextState);
+            float value = this.valueFunctionPredict(this.state);
 
             //Calculate the TD error
             float tdError = reward + (this.discountFactor * nextValue) - value;
@@ -189,42 +162,46 @@ public class GCAgent{
             //Adjust the policy function
             //Run the predict function to populate the backprop data in the function object
             float[] policyOutput = this.neuralNetworkPredict(this.policyNetwork, this.state);
-            dObjdY = this.softmaxdObjdX(policyOutput, this.action);
+            dObjdY = this.softmaxdObjdX(policyOutput, this.prev_action);
             this.neuralNetworkGradient(this.policyNetwork, dObjdY);
             this.applyGradients(this.policyNetwork, tdError * this.policyLR);
             
             
+            //Select the next action
+            float[] probVector = this.policyFunctionPredict(nextState);
+            this.prev_action = this.selectAction(probVector);
 
-            float[] probVector = this.softmax(this.neuralNetworkPredict(this.policyNetwork, nextState));
-            this.action = this.selectAction(probVector);
-            this.obs = nextObs;
-            this.probAction = probVector[this.action];
-            this.state = nextState;
-            this.updateInputVector = nextUpdateInput;
-
-
-            this.meanConfidence.addSample(Math.max(this.probAction, 1 - this.probAction));
-
-            if(this.action == 1){
+            if(this.prev_action == 1){
                 System.gc();
             }
 
-            //Determine if update function should be adjusted
-            if(this.meanReward.getNumSamples() > this.minUpdateInterval && this.meanConfidence.getMean() > this.confidenceStopThreshold){
-                if(this.meanReward.getMean() > this.bestMeanReward){
-                    //Current update params are better than previous, set variables
-                    this.bestMeanReward = this.meanReward.getMean();
-                    this.bestUpdateParams = GCAgent.copyParams(this.updateNetwork);
-                }
-                
-                
-                //Create new update function
-                this.meanReward.reset();
-                this.setParameters(this.updateNetwork, this.bestUpdateParams);
-                this.randomOffsetParams(this.updateNetwork, this.updateDelta);
-                this.firstTimestep = true;
-            }
+            //Set the "current" observation, action probability, and state fields to the past fields
+            this.obs = nextObs;
+            this.probAction = probVector[this.prev_action];
+            this.state = nextState;
 
+            this.meanConfidence.addSample(Math.max(this.probAction, 1 - this.probAction));
+
+        }
+
+
+            
+
+        //Determine if update function should be adjusted
+        if(this.meanReward.getNumSamples() > this.minUpdateInterval && this.meanConfidence.getMean() > this.confidenceStopThreshold){
+            if(this.meanReward.getMean() > this.bestMeanReward){
+                //Current update params are better than previous, set variables
+                this.bestMeanReward = this.meanReward.getMean();
+                this.bestUpdateParams = GCAgent.copyParams(this.updateNetwork);
+            }
+            
+            System.out.println("Best mean reward: " + this.bestMeanReward);
+            
+            //Create new update function
+            this.meanReward.reset();
+            this.setParameters(this.updateNetwork, this.bestUpdateParams);
+            this.randomOffsetParams(this.updateNetwork, this.updateStepSize);
+            this.firstTimestep = true;
         }
 
     }
@@ -294,7 +271,7 @@ public class GCAgent{
     }
 
     private float[] policyFunctionPredict(float[] state){
-        return this.neuralNetworkPredict(this.policyNetwork, state);
+        return this.softmax(this.neuralNetworkPredict(this.policyNetwork, state));
     }
 
     private float[] getUpdateInputVector(float[] prevState, int prevAction, float[] obs){
@@ -515,15 +492,6 @@ public class GCAgent{
         System.out.print(array[array.length - 1] + "]\n");
     }
 
-    public float getAvgProb(){
-        return this.probAverage.getMean();
-    }
-
-    public float getAvgTimeInterval(){
-        return this.timeIntervalAverage.getMean();
-    }
-
-
     private static ArrayList<float[][]> copyParams(ArrayList<Layer> network){
         ArrayList<float[][]> params = new ArrayList<float[][]>();
 
@@ -567,11 +535,7 @@ public class GCAgent{
             for(int j = 0; j < l.parameters.size(); j++){
                 float[][] matrix = l.parameters.get(j);
 
-                for(int r = 0; r < matrix.length; r++){
-                    for(int c = 0; c < matrix[0].length; c++){
-                        matrix[r][c] += ((float)Math.random() * (2 * maxOffset)) - maxOffset;
-                    }
-                }
+                Utility.populateRandom(matrix, -maxOffset, maxOffset);
             }
         }
     }
