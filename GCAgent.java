@@ -60,22 +60,11 @@ public class GCAgent{
 
     private int timestep;
 
-    private int numDebugs;
-
-    private CSVWriter writer;
-
-    private float baseline;
 
 
     //Stopping conditions/debug statistics
-    private MovingAverage probAverage;
-    private MovingAverage timeIntervalAverage;
-    private MovingAverage tdAverage;
-
     private MovingAverage meanConfidence;
     private MovingAverage meanReward;
-
-    private int movingAverageNumSamples;
 
 
     public GCAgent(int hiddenLayerSizePolicy, int hiddenLayerSizeValue, float policyLR, float valueLR, float updateLR, float discountFactor, int debugInterval){
@@ -91,12 +80,11 @@ public class GCAgent{
 
         this.updateDelta = 0.00001f;
 
-        observationSize = 12;
+        this.observationSize = this.getObservation().length;
         prevObsTime = System.currentTimeMillis();
 
         //Create the models
         this.createPolicyNetwork(hiddenLayerSizePolicy);
-        this.valueFunctionInputSize = this.getTotalEntryCount(this.getLSTMCurrentStates(this.policyNetwork)) + this.observationSize;
 
         this.createValueNetwork(hiddenLayerSizeValue);
         this.createUpdateNetwork(128);
@@ -105,29 +93,30 @@ public class GCAgent{
 
         this.firstTimestep = true;
 
-        this.timestep = 0;
-        this.numDebugs = 0;
-
         this.bestMeanReward = Float.NEGATIVE_INFINITY;
 
 
         this.debugInterval = debugInterval;
 
-        this.baseline = -1f;
-
-        String[] columns = {"Debug time", "Mean Prob", "Mean time interval", "Mean time ratio", "Mean abs td error"};
-        this.writer = new CSVWriter("stats.csv", columns);
-
-        this.movingAverageNumSamples = 1000;
-        this.probAverage = new MovingAverage(this.movingAverageNumSamples);
-        this.timeIntervalAverage = new MovingAverage(this.movingAverageNumSamples);
-        this.tdAverage = new MovingAverage(this.movingAverageNumSamples);
         this.meanReward = new MovingAverage(this.minUpdateInterval);
         this.meanConfidence = new MovingAverage(this.minUpdateInterval);
     }
 
-    public void setBaseline(float baseline){
-        this.baseline = baseline;
+    public GCAgent(int stateSize, int hiddenLayerSizePolicy, int hiddenLayerSizeValue, int hiddenLayerSizeUpdate, float valueLearningRate, float policyLearningRate, float updateStepSize, float confidenceStopThreshold, float discountFactor, int minUpdateInterval){
+
+        this.stateSize = stateSize;
+
+        this.valueLR = valueLearningRate;
+        this.policyLR = policyLearningRate;
+        this.updateDelta = updateStepSize;
+        this.confidenceStopThreshold = confidenceStopThreshold;
+        this.discountFactor = discountFactor;
+        this.minUpdateInterval = minUpdateInterval;
+
+        //Create the functions
+        this.createPolicyNetwork(hiddenLayerSizePolicy);
+        this.createValueNetwork(hiddenLayerSizeValue);
+        this.createUpdateNetwork(hiddenLayerSizeUpdate);
     }
 
     /**
@@ -159,7 +148,6 @@ public class GCAgent{
             this.obs = nextObs;
             this.probAction = probVector[this.action];
 
-            this.probAverage.addSample(this.probAction);
             this.updateInputVector = updateInputVector;
 
 
@@ -176,11 +164,9 @@ public class GCAgent{
             this.prevObsTime = currentObsTime;
 
             float reward = -(float)deltaSeconds;
-            this.timeIntervalAverage.addSample(-reward);
             this.meanReward.addSample(reward);
 
             //Get next state
-            //System.out.println(Arrays.toString(this.state));
             float[] nextUpdateInput = this.getUpdateInputVector(this.state, this.action, nextObs);
             float[] nextState = this.neuralNetworkPredict(this.updateNetwork, nextUpdateInput);
 
@@ -191,27 +177,6 @@ public class GCAgent{
             //Calculate the TD error
             float tdError = reward + (this.discountFactor * nextValue) - value;
 
-            this.tdAverage.addSample(tdError);
-
-
-            //Write stats to file if interval is reached
-            if(this.debugInterval != -1 && this.timestep % this.debugInterval == 0){
-                float meanProb = this.probAverage.getMean();
-                float meanTimeInterval = this.timeIntervalAverage.getMean();
-                float meanAbsTdError = Math.abs(this.tdAverage.getMean());
-
-                System.out.println("Average confidence: " + this.meanConfidence.getMean());
-                System.out.println("Average time interval: " + meanTimeInterval);
-                System.out.println("Average abs td error: " + meanAbsTdError);
-                System.out.println("Average performance ratio: " + meanTimeInterval / this.baseline + "\n");
-
-                String[] row = {"" + this.numDebugs, "" + meanProb, "" + meanTimeInterval, "" + meanTimeInterval / this.baseline,"" + meanAbsTdError};
-                writer.addRow(row);
-                writer.writeToFile();
-
-                this.timestep = 0;
-                this.numDebugs++;
-            }
 
 
             //Adjust value function
@@ -220,12 +185,6 @@ public class GCAgent{
             dObjdY[0] = 1;
             this.neuralNetworkGradient(this.valueNetwork, dObjdY);
             this.applyGradients(this.valueNetwork, tdError * this.valueLR);
-
-            //Adjust update function
-            //Run old update input vector to populate backprop data
-            //this.neuralNetworkPredict(this.updateNetwork, this.updateInputVector);
-            //this.neuralNetworkGradient(this.updateNetwork, this.valueNetwork.get(0).dObjectivedX);
-            //this.applyGradients(this.updateNetwork, tdError * this.updateLR);
 
             //Adjust the policy function
             //Run the predict function to populate the backprop data in the function object
@@ -268,9 +227,6 @@ public class GCAgent{
 
         }
 
-        
-
-        this.timestep++;
     }
 
 
@@ -278,10 +234,9 @@ public class GCAgent{
     private void createPolicyNetwork(int hiddenLayerSize){
         this.policyNetwork = new ArrayList<Layer>();
 
-        //Use 2 hidden LSTM layers
-
-        this.policyNetwork.add(new DenseLinear(hiddenLayerSize, this.stateSize));
-        this.policyNetwork.add(new DenseLinear(hiddenLayerSize, hiddenLayerSize));
+        //Use 2 hidden layers
+        this.policyNetwork.add(new DenseTanh(hiddenLayerSize, this.stateSize));
+        this.policyNetwork.add(new DenseTanh(hiddenLayerSize, hiddenLayerSize));
 
         //Linear dense layer for the output
         this.policyNetwork.add(new DenseLinear(2, hiddenLayerSize));
@@ -313,19 +268,33 @@ public class GCAgent{
         this.updateNetwork.add(new DenseTanh(this.stateSize, hiddenUnitSize));
     }
 
-    private ArrayList<float[]> getLSTMCurrentStates(ArrayList<Layer> neuralNetwork){
-        ArrayList<float[]> states = new ArrayList<float[]>();
+    private float[] updateFunctionPredict(float[] prevState, int prevAction, float[] obs){
+        float[] inputVector = this.getUpdateInputVector(prevState, prevAction, obs);
 
-        for(int i = 0; i < neuralNetwork.size(); i++){
-            if(neuralNetwork.get(i) instanceof LSTM){
+        return this.neuralNetworkPredict(this.updateNetwork, inputVector);
+    }
 
-                LSTM l = (LSTM)neuralNetwork.get(i);
-                states.add(l.currentHState);
-                states.add(l.currentCState);
-            }
+    private float[] updateFunctionPredictFirstTimestep(float[] firstObs){
+        float[] inputVector = new float[this.stateSize + 2 + firstObs.length];
+
+        for(int i = 0; i < this.stateSize + 2; i++){
+            inputVector[i] = -1;
         }
 
-        return states;
+        int offset = this.stateSize + 2;
+        for(int i = 0; i < firstObs.length; i++){
+            inputVector[i + offset] = firstObs[i];
+        }
+
+        return this.neuralNetworkPredict(this.updateNetwork, inputVector);
+    }
+
+    private float valueFunctionPredict(float[] state){
+        return this.neuralNetworkPredict(this.valueNetwork, state)[0];
+    }
+
+    private float[] policyFunctionPredict(float[] state){
+        return this.neuralNetworkPredict(this.policyNetwork, state);
     }
 
     private float[] getUpdateInputVector(float[] prevState, int prevAction, float[] obs){
