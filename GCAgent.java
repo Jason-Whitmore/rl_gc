@@ -86,10 +86,10 @@ public class GCAgent{
 
         this.discountFactor = discountFactor;
 
-        this.stateSize = 100;
+        this.stateSize = 200;
         this.minUpdateInterval = 10000;
 
-        this.updateDelta = 0.0001f;
+        this.updateDelta = 0.00001f;
 
         observationSize = 12;
         prevObsTime = System.currentTimeMillis();

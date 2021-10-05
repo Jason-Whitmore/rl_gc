@@ -185,7 +185,7 @@ public class Experiment{
     public float performExperimentAgent(int iterations, float probStop, int hiddenLayerSize, float baseline){
         long startTime = System.currentTimeMillis() / 1000;
 
-        GCAgent agent = new GCAgent(hiddenLayerSize, hiddenLayerSize, 0.0001f, 0.001f, 0.00001f, 0.9999f, 1000);
+        GCAgent agent = new GCAgent(hiddenLayerSize, hiddenLayerSize, 0.0001f, 0.01f, 0.000001f, 0.9999f, 10000);
         
         agent.setBaseline(baseline);
 
@@ -259,13 +259,12 @@ public class Experiment{
         float defaultTime = exp.performExperimentDefault(10 * 1000);
         System.out.println("Default time: " + defaultTime);
 
-        for(int h = 128; h <= 256; h += 10){
 
-            float agentTime = exp.performExperimentAgent(1000 * 1000 * 30, 0.98f, h, defaultTime);
 
-            System.out.println("Hidden layer size: " + h);
-            System.out.println("Performance Ratio: " + ((float)defaultTime) / agentTime);
-        }
+        float agentTime = exp.performExperimentAgent(1000 * 1000 * 30, 0.98f, 200, defaultTime);
+
+        System.out.println("Performance Ratio: " + ((float)defaultTime) / agentTime);
+
 
     }
 }
