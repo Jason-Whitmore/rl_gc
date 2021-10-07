@@ -54,11 +54,12 @@ public class GCAgent{
 
     public GCAgent(){
         this.stateSize = 200;
+        this.observationSize = this.getObservation().length;
 
-        this.valueLR = 0.001f;
-        this.policyLR = 0.0001f;
+        this.valueLR = 0.1f;
+        this.policyLR = 0.01f;
         this.updateStepSize = 0.001f;
-        this.confidenceStopThreshold = 0.98f;
+        this.confidenceStopThreshold = 0.95f;
         this.discountFactor = 0.9999f;
         this.minUpdateInterval = 10000;
 
@@ -228,21 +229,21 @@ public class GCAgent{
         }
     }
 
-    private void createValueNetwork(int hiddenSize){
+    private void createValueNetwork(int hiddenLayerSize){
         this.valueNetwork = new ArrayList<Layer>();
 
-        this.valueNetwork.add(new DenseTanh(hiddenSize, this.stateSize));
-        this.valueNetwork.add(new DenseTanh(hiddenSize, hiddenSize));
-        this.valueNetwork.add(new DenseLinear(1, hiddenSize));
+        this.valueNetwork.add(new DenseTanh(hiddenLayerSize, this.stateSize));
+        this.valueNetwork.add(new DenseTanh(hiddenLayerSize, hiddenLayerSize));
+        this.valueNetwork.add(new DenseLinear(1, hiddenLayerSize));
     }
 
-    private void createUpdateNetwork(int hiddenUnitSize){
+    private void createUpdateNetwork(int hiddenLayerSize){
         this.updateNetwork = new ArrayList<Layer>();
 
-        this.updateNetwork.add(new DenseTanh(hiddenUnitSize, this.stateSize + this.observationSize + 2));
-        this.updateNetwork.add(new DenseTanh(hiddenUnitSize, hiddenUnitSize));
+        this.updateNetwork.add(new DenseTanh(hiddenLayerSize, this.stateSize + this.observationSize + 2));
+        this.updateNetwork.add(new DenseTanh(hiddenLayerSize, hiddenLayerSize));
 
-        this.updateNetwork.add(new DenseTanh(this.stateSize, hiddenUnitSize));
+        this.updateNetwork.add(new DenseTanh(this.stateSize, hiddenLayerSize));
     }
 
     private float[] updateFunctionPredict(float[] prevState, int prevAction, float[] obs){
@@ -424,7 +425,7 @@ public class GCAgent{
 
 
     private float[] getObservation(){
-        float[] observation = new float[this.observationSize];
+        float[] observation = new float[12];
 
         Runtime r = Runtime.getRuntime();
 
@@ -535,7 +536,11 @@ public class GCAgent{
             for(int j = 0; j < l.parameters.size(); j++){
                 float[][] matrix = l.parameters.get(j);
 
-                Utility.populateRandom(matrix, -maxOffset, maxOffset);
+                for(int r = 0; r < matrix.length; r++){
+                    for(int c = 0; c < matrix[0].length; c++){
+                        matrix[r][c] += Utility.getRandom(-maxOffset, maxOffset);
+                    }
+                }
             }
         }
     }
