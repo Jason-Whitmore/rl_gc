@@ -254,7 +254,7 @@ public class Experiment{
     public static void main(String[] args){
         Experiment exp = new Experiment(100);
 
-        float defaultTime = exp.performExperimentDefault(1 * 1000);
+        float defaultTime = exp.performExperimentDefault(1 * 10);
         System.out.println("Default time: " + defaultTime);
 
         float agentTime = exp.performExperimentAgent(1000 * 1000 * 30);

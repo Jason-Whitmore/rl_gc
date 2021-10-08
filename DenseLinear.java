@@ -1,3 +1,5 @@
+import java.util.Arrays;
+
 public class DenseLinear extends Layer{
 
 
@@ -35,6 +37,8 @@ public class DenseLinear extends Layer{
 
             this.outputVector[i] = sum;
         }
+
+
     }
 
     public void backwardPass(){

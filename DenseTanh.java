@@ -24,9 +24,10 @@ public class DenseTanh extends Layer{
         this.gradient.add(new float[numUnits][inputSize]);
         this.gradient.add(new float[numUnits][1]);
 
-        this.populateParams(-0.000001f, 0.000001f);
+        this.populateParams(-0.001f, 0.001f);
     }
 
+    @Override
     public void forwardPass(){
 
         float[][] weights = this.parameters.get(0);
@@ -41,10 +42,11 @@ public class DenseTanh extends Layer{
 
             this.sumVector[i] = sum;
 
-            this.outputVector[i] = LSTM.tanh(sum);
+            this.outputVector[i] = Utility.tanh(sum);
         }
     }
 
+    @Override
     public void backwardPass(){
         float[][] weightsGradient = this.gradient.get(0);
         float[][] biasGradient = this.gradient.get(1);
@@ -55,7 +57,7 @@ public class DenseTanh extends Layer{
 
         for(int r = 0; r < weightsGradient.length; r++){
             for(int c = 0; c < weightsGradient[r].length; c++){
-                weightsGradient[r][c] = this.inputVector[c] * LSTM.tanhPrime(this.sumVector[r]) * this.dObjectivedY[r];
+                weightsGradient[r][c] = this.inputVector[c] * Utility.tanhPrime(this.sumVector[r]) * this.dObjectivedY[r];
             }
         }
 
@@ -64,7 +66,7 @@ public class DenseTanh extends Layer{
 
             float[][] weights = this.parameters.get(0);
             for(int r = 0; r < weightsGradient.length; r++){
-                sum += weights[r][i] * LSTM.tanhPrime(this.sumVector[r]) * this.dObjectivedY[r];
+                sum += weights[r][i] * Utility.tanhPrime(this.sumVector[r]) * this.dObjectivedY[r];
             }
 
             this.dObjectivedX[i] = sum;

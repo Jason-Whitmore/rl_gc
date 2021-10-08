@@ -56,8 +56,8 @@ public class GCAgent{
         this.stateSize = 200;
         this.observationSize = this.getObservation().length;
 
-        this.valueLR = 0.0001f;
-        this.policyLR = 0.00001f;
+        this.valueLR = 0.01f;
+        this.policyLR = 0.001f;
         this.updateStepSize = 0.001f;
         this.confidenceStopThreshold = 0.95f;
         this.discountFactor = 0.9999f;
@@ -127,6 +127,8 @@ public class GCAgent{
             this.meanConfidence.addSample(Math.max(this.probAction, 1 - this.probAction));
 
             this.firstTimestep = false;
+
+            this.prevObsTime = System.currentTimeMillis();
         } else {
 
             //Get the next observation
@@ -151,8 +153,6 @@ public class GCAgent{
             //Calculate the TD error
             float tdError = reward + (this.discountFactor * nextValue) - value;
 
-
-
             //Adjust value function
             //Backprop data should already be stored in the value function object since the last call to predict was on the "current" inputs
             float[] dObjdY = new float[1];
@@ -163,7 +163,9 @@ public class GCAgent{
             //Adjust the policy function
             //Run the predict function to populate the backprop data in the function object
             float[] policyOutput = this.neuralNetworkPredict(this.policyNetwork, this.state);
+            //System.out.println("Policy output: " + Arrays.toString(policyOutput));
             dObjdY = this.softmaxdObjdX(policyOutput, this.prev_action);
+            //System.out.println("dObjdY: " + Arrays.toString(dObjdY));
             this.neuralNetworkGradient(this.policyNetwork, dObjdY);
             this.applyGradients(this.policyNetwork, tdError * this.policyLR);
             
@@ -183,7 +185,7 @@ public class GCAgent{
 
             this.meanConfidence.addSample(Math.max(this.probAction, 1 - this.probAction));
 
-            System.out.println(probVector[this.prev_action]);
+            //System.out.println("Softmax: " + Arrays.toString(probVector));
 
         }
 
@@ -247,7 +249,6 @@ public class GCAgent{
 
         this.updateNetwork.add(new DenseTanh(hiddenLayerSize, this.stateSize + this.observationSize + 2));
         this.updateNetwork.add(new DenseTanh(hiddenLayerSize, hiddenLayerSize));
-
         this.updateNetwork.add(new DenseTanh(this.stateSize, hiddenLayerSize));
     }
 
@@ -293,16 +294,6 @@ public class GCAgent{
 
         for(int i = 0; i < obs.length; i++){
             inputVector[prevState.length + 2 + i] = obs[i];
-        }
-
-        return inputVector;
-    }
-
-    private float[] getStartingUpdateInputVector(float[] obs){
-        float[] inputVector = new float[this.stateSize + 2 + obs.length];
-
-        for(int i = 0; i < obs.length; i++){
-            inputVector[this.stateSize + 2 + i] = obs[i];
         }
 
         return inputVector;
@@ -357,7 +348,7 @@ public class GCAgent{
     public float[] softmax(float[] x){
         float[] y = new float[x.length];
 
-        float sum = 0.0001f;
+        float sum = 0f;
 
         for(int i = 0; i < x.length; i++){
             sum += (float)Math.exp((double)x[i]);
@@ -367,7 +358,6 @@ public class GCAgent{
             y[i] = (float)Math.exp((double)x[i]) / sum;
         }
 
-        System.out.println(sum);
 
         return y;
     }
@@ -376,7 +366,7 @@ public class GCAgent{
     public float[] softmaxdObjdX(float[] x, int index){
         float[] dObjdX = new float[x.length];
 
-        float sum = 0;
+        float sum = 0.000001f;
 
         for(int i = 0; i < x.length; i++){
             sum += (float)Math.exp((double)x[i]);
@@ -400,7 +390,7 @@ public class GCAgent{
                 sum += (float)Math.exp((double)x[i]);
             }
         }
-
+    
         return dObjdX;
     }
 

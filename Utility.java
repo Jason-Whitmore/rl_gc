@@ -20,4 +20,12 @@ public class Utility {
             Utility.populateRandom(array[i], low, high);
         }
     }
+
+    public static float tanh(float x){
+        return (float)Math.tanh((double)x);
+    }
+
+    public static float tanhPrime(float x){
+        return (1f - (Utility.tanh(x) * Utility.tanh(x)));
+    }
 }
