@@ -24,7 +24,7 @@ public class DenseTanh extends Layer{
         this.gradient.add(new float[numUnits][inputSize]);
         this.gradient.add(new float[numUnits][1]);
 
-        this.populateParams(-0.1f, 0.1f);
+        this.populateParams(-0.000001f, 0.000001f);
     }
 
     public void forwardPass(){

@@ -40,13 +40,7 @@ public abstract class Layer{
         for(int i = 0; i < this.parameters.size(); i++){
             float[][] paramMatrix = this.parameters.get(i);
 
-            for(int r = 0; r < paramMatrix.length; r++){
-                for(int c = 0; c < paramMatrix[r].length; c++){
-                    float value = (float)Math.random() * (max - min);
-
-                    paramMatrix[r][c] = value + min;
-                }
-            }
+            Utility.populateRandom(paramMatrix, min, max);
         }
     }
     

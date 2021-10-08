@@ -56,17 +56,17 @@ public class GCAgent{
         this.stateSize = 200;
         this.observationSize = this.getObservation().length;
 
-        this.valueLR = 0.1f;
-        this.policyLR = 0.01f;
+        this.valueLR = 0.0001f;
+        this.policyLR = 0.00001f;
         this.updateStepSize = 0.001f;
         this.confidenceStopThreshold = 0.95f;
         this.discountFactor = 0.9999f;
         this.minUpdateInterval = 10000;
 
         //Create the functions
-        this.createPolicyNetwork(64);
-        this.createValueNetwork(64);
-        this.createUpdateNetwork(64);
+        this.createPolicyNetwork(128);
+        this.createValueNetwork(128);
+        this.createUpdateNetwork(128);
 
         //Other fields
         this.firstTimestep = true;
@@ -183,26 +183,31 @@ public class GCAgent{
 
             this.meanConfidence.addSample(Math.max(this.probAction, 1 - this.probAction));
 
+            System.out.println(probVector[this.prev_action]);
+
         }
 
 
-            
-
         //Determine if update function should be adjusted
-        if(this.meanReward.getNumSamples() > this.minUpdateInterval && this.meanConfidence.getMean() > this.confidenceStopThreshold){
-            if(this.meanReward.getMean() > this.bestMeanReward){
+        if(this.meanReward.getNumSamples() >= this.minUpdateInterval ){
+            if(this.meanReward.getMean() > this.bestMeanReward && this.meanConfidence.getMean() > this.confidenceStopThreshold){
                 //Current update params are better than previous, set variables
                 this.bestMeanReward = this.meanReward.getMean();
                 this.bestUpdateParams = GCAgent.copyParams(this.updateNetwork);
+
+                            //Create new update function
+                this.setParameters(this.updateNetwork, this.bestUpdateParams);
+                this.randomOffsetParams(this.updateNetwork, this.updateStepSize);
+                this.firstTimestep = true;
             }
             
             System.out.println("Best mean reward: " + this.bestMeanReward);
+            System.out.println("Confidence: " + this.meanConfidence.getMean());
             
-            //Create new update function
+
             this.meanReward.reset();
-            this.setParameters(this.updateNetwork, this.bestUpdateParams);
-            this.randomOffsetParams(this.updateNetwork, this.updateStepSize);
-            this.firstTimestep = true;
+            this.meanConfidence.reset();
+            
         }
 
     }
@@ -308,7 +313,6 @@ public class GCAgent{
     private float[] neuralNetworkPredict(ArrayList<Layer> neuralNetwork, float[] inputVector){
 
         GCAgent.copyArrayContents(inputVector, neuralNetwork.get(0).inputVector);
-        //neuralNetwork.get(0).inputVector = inputVector;
         neuralNetwork.get(0).forwardPass();
 
         for(int i = 1; i < neuralNetwork.size(); i++){
@@ -332,15 +336,6 @@ public class GCAgent{
         }
     }
 
-    private int getTotalEntryCount(ArrayList<float[]> list){
-        int count = 0;
-
-        for(int i = 0; i < list.size(); i++){
-            count += list.get(i).length;
-        }
-
-        return count;
-    }
 
     private void applyGradients(ArrayList<Layer> neuralNetwork, float scalar){
 
@@ -362,7 +357,7 @@ public class GCAgent{
     public float[] softmax(float[] x){
         float[] y = new float[x.length];
 
-        float sum = 0;
+        float sum = 0.0001f;
 
         for(int i = 0; i < x.length; i++){
             sum += (float)Math.exp((double)x[i]);
@@ -371,6 +366,8 @@ public class GCAgent{
         for(int i = 0; i < y.length; i++){
             y[i] = (float)Math.exp((double)x[i]) / sum;
         }
+
+        System.out.println(sum);
 
         return y;
     }
@@ -520,9 +517,9 @@ public class GCAgent{
     private void setParameters(ArrayList<Layer> network, ArrayList<float[][]> parameters){
         int k = 0;
         for(int i = 0; i < network.size(); i++){
-            Layer l = network.get(i);
+            Layer l = (Layer)network.get(i);
 
-            for(int j = 0; j < l.parameters.size(); i++){
+            for(int j = 0; j < l.parameters.size(); j++){
                 l.parameters.set(j, GCAgent.copy(parameters.get(k)));
                 k++;
             }

@@ -18,7 +18,7 @@ public class DenseLinear extends Layer{
         this.gradient.add(new float[numUnits][inputSize]);
         this.gradient.add(new float[numUnits][1]);
 
-        this.populateParams(-0.1f, 0.1f);
+        this.populateParams(-0.001f, 0.001f);
     }
 
 
@@ -26,10 +26,6 @@ public class DenseLinear extends Layer{
 
         float[][] weights = this.parameters.get(0);
         float[][] bias = this.parameters.get(1);
-
-        //System.out.println("Linear input: ");
-        //GCAgent.printArray(this.inputVector);
-
 
         for(int i = 0; i < outputVector.length; i++){
             float sum = 0;
